@@ -1,0 +1,131 @@
+---
+title: "Tegula funebralis"
+output: html_notebook
+---
+
+April 12, 2021
+
+# Purpose
+
+I am going to have a go at re-analyzing RAD data from *Tegula funebralis* in Gleason and Burton 2016, and try to learn some modern bioinformatic skills along the way. May end up adding in Charles' data down the line.
+
+# Setup
+
+```{r setup}
+library(tidyverse)
+library(readxl)
+```
+
+## Download Data
+
+Going to work on montastraea.psu.edu for now. Will create a local `~/eric_data/bin` folder, and attach this to my $PATH so as not to need root permissions. Following along [here](https://github.com/ncbi/sra-tools/wiki).
+
+```{unix, eval = F}
+# get the sra toolkit
+curl https://ftp-trace.ncbi.nlm.nih.gov/sra/sdk/2.11.0/sratoolkit.2.11.0-ubuntu64.tar.gz > sratoolkit.2.11.tar.gz
+tar -zxvf sratoolkit.2.11.tar.gz 
+
+# add this line to .bashrc and copy all executables into it
+export PATH="$HOME/bin:$PATH"
+
+# make eric_data/prefetched as a cache for prefetch, use this command to set the cache
+vdb-config -i
+
+prefetch SRR4343007 SRR4342987 SRR4342986 SRR4342988 SRR4343078 SRR4343056 SRR4343058 SRR4343081 SRR4343032 SRR4343040 SRR4343028 SRR4343011 SRR4343006 SRR4343016 SRR4343073 SRR4343015 SRR4343036 SRR4343037 SRR4343054 SRR4343065 SRR4343000 SRR4343023 SRR4343039 SRR4343079 SRR4343049 SRR4343018 SRR4342989 SRR4343084 SRR4343050 SRR4343009 SRR4343075 SRR4343086 SRR4343071 SRR4343062 SRR4343059 SRR4343047 SRR4343042 SRR4343066 SRR4343063 SRR4343021 SRR4343029 SRR4343031 SRR4343053 SRR4343072 SRR4343060 SRR4343033 SRR4343026 SRR4343022 SRR4343030 SRR4343044 SRR4343046 SRR4343055 SRR4342990 SRR4343012 SRR4343068 SRR4343069 SRR4343019 SRR4343034 SRR4343077 SRR4343057 SRR4343048 SRR4343014 SRR4343005 SRR4343045 SRR4343080 SRR4343085 SRR4343082 SRR4343017 SRR4343043 SRR4343024 SRR4343088 SRR4343074 SRR4343067 SRR4343041 SRR4343025 SRR4343008 SRR4343083 SRR4343064 SRR4343051 SRR4343038 SRR4343052 SRR4343061 SRR4343076 SRR4343035 SRR4343087 SRR4343010 SRR4343070 SRR4343027 SRR4343020 SRR4343013
+
+
+fasterq-dump SRR4343007 SRR4342987 SRR4342986 SRR4342988 SRR4343078 SRR4343056 SRR4343058 SRR4343081 SRR4343032 SRR4343040 SRR4343028 SRR4343011 SRR4343006 SRR4343016 SRR4343073 SRR4343015 SRR4343036 SRR4343037 SRR4343054 SRR4343065 SRR4343000 SRR4343023 SRR4343039 SRR4343079 SRR4343049 SRR4343018 SRR4342989 SRR4343084 SRR4343050 SRR4343009 SRR4343075 SRR4343086 SRR4343071 SRR4343062 SRR4343059 SRR4343047 SRR4343042 SRR4343066 SRR4343063 SRR4343021 SRR4343029 SRR4343031 SRR4343053 SRR4343072 SRR4343060 SRR4343033 SRR4343026 SRR4343022 SRR4343030 SRR4343044 SRR4343046 SRR4343055 SRR4342990 SRR4343012 SRR4343068 SRR4343069 SRR4343019 SRR4343034 SRR4343077 SRR4343057 SRR4343048 SRR4343014 SRR4343005 SRR4343045 SRR4343080 SRR4343085 SRR4343082 SRR4343017 SRR4343043 SRR4343024 SRR4343088 SRR4343074 SRR4343067 SRR4343041 SRR4343025 SRR4343008 SRR4343083 SRR4343064 SRR4343051 SRR4343038 SRR4343052 SRR4343061 SRR4343076 SRR4343035 SRR4343087 SRR4343010 SRR4343070 SRR4343027 SRR4343020 SRR4343013
+
+
+
+```
+
+## Install Stacks
+
+Install [Stacks v2.55](https://catchenlab.life.illinois.edu/stacks/), following along [here](https://catchenlab.life.illinois.edu/stacks/manual/)
+
+```{unix installStacks}
+curl https://catchenlab.life.illinois.edu/stacks/source/stacks-2.55.tar.gz > stacks-2.55.tar.gz
+tar xfvz stacks-2.55.tar.gz
+cd stacks-2.55/
+# use this to specific install location
+./configure --prefix=/home/ecrandall/bin
+
+make -j 8
+# can do this without root because its in my own directory!
+make install
+
+```
+
+# Re-analysis with Stacks
+
+It looks like Lani Gleason uploaded the data after they were processed using `process_radtags`. From Gleason et al.
+
+> Raw sequences were filtered using the process_radtags pipeline in STACKS version 1.21 (Catchen et al. 2011, 2013). Low-quality reads with a Phred quality score <10 as well as any reads with an uncalled base were removed, and reads were trimmed to 90 base pairs in length.
+
+As described, all of the files that I downloaded have 90bp fragments, with high quality scores.
+
+## Rename files
+
+Currently files are named SRRXXXXXXX_1.fastq & SRRXXXXXXX_2.fastq, with remainder reads going in SRRXXXXXXX.fastq. Now going to rename them (and gzip them) according to Stacks' expectation, which is SRRXXXXXXX.[12].fq.gz
+
+```{unix rename, eval = F}
+for i in *_1.fastq
+do
+mv $i ${i::-8}.1.fq
+done
+
+for i in *_2.fastq
+do
+mv $i ${i::-8}.2.fq
+done
+# rename remnants
+for i in *.fastq
+do
+mv $i ${i::-6}.rem.fq
+done
+
+# files currently sum to 64,427 gigs. Use pigz (parallel gzip)
+pigz -v *
+
+```
+
+## Make Population Map
+```{r popmap}
+tegula_mdata <- read_excel("M0011_PRJNA286949_validated_QC.xlsx", sheet = "Samples")
+region_key <- c(Slide_Ranch = "North", Pescadero = "North", Pigeon_Point = "North", 
+                Aliso_Beach = "South", La_Jolla = "South", Bird_Rock = "South")
+#replace spaces in locality names with _
+popmap <- tegula_mdata[,c("run_acc_sra","locality")] %>% 
+              mutate(locality = str_replace(locality,pattern = " ", replacement = "_"),.keep = "unused") %>% 
+              mutate(region = recode(locality,!!!region_key), .keep = "all")
+write_tsv(popmap,col_names = FALSE, file = "tegula_popmap.tsv")
+
+```
+
+## Run the Stacks Pipeline
+
+Following Gleason & Burton
+
+> There is no reference genome for C. funebralis, so reads were assembled de novo using the denovo_map.pl pipe- line in Stacks. The number of raw reads required to form a RAD-tag (stack depth parameter, m) was set to 5, and the number of allowed nucleotide mismatches between two RAD-tags (mismatch parameter, M) was set to 2.
+
+
+```{unix eval = F}
+mkdir stacks
+
+denovo_map.pl -T 10 --samples ./raw --popmap tegula_popmap.tsv --out-path ./stacks --paired -m 5 -M 2 -n 2 -r 0.5 -p 4
+
+-m 5 #number of raw reads to form a locus
+-M 2 #number of mismatches allowed between stacks within individuals
+-n 2 #number of mismatches allowed between stacks between individuals (suggested to set to -M value)
+-r 0.5 # min proportion in a population required to process a locus
+-p 4 # minimum populations that a locus must occur within to process a locus
+
+
+```
+Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
+
+When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
+
+The preview shows you a rendered HTML copy of the contents of the editor. Consequently, unlike *Knit*, *Preview* does not run any R code chunks. Instead, the output of the chunk when it was last run in the editor is displayed.
+
