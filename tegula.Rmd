@@ -84,9 +84,20 @@ for i in *.fastq
 do
 mv $i ${i::-6}.rem.fq
 done
+```
 
+Got an error down the pipeline: `Error: Unrecognized paired-end read name format`. Apparently this is because the read headers for read 1 are `@SRR4343007.1 1 length=90` and for read 2 are `@SRR4343007.1 1 length=95` I don't know if it is tripping on the different lengths, but also, according to [this](https://groups.google.com/g/stacks-users/c/c1ZwIT5WF90) the two read headers need to end in /1 and /2. So a little sed is in order.
+
+```{unix rename2}
+
+# -E use extended regular expressions, 
+# -i edit in place (don't make a new file)
+# 's/ [0-9]+ length=90/\/2/1'  s = substitute; {[0-9]+ length=90} regex to look for; 
+# \/2 replace with /2 (and \ escapes /); 1 instance per line
+sed -Ei 's/ [0-9]+ length=90/\/1/1' *.1.fq
+sed -Ei 's/ [0-9]+ length=95/\/2/1' *.2.fq
 # files currently sum to 64,427 gigs. Use pigz (parallel gzip)
-pigz -v *
+pigz -v *.fq
 
 ```
 
@@ -123,6 +134,14 @@ denovo_map.pl -T 10 --samples ./raw --popmap tegula_popmap.tsv --out-path ./stac
 
 
 ```
+
+
+
+
+
+Maybe IBD and Migrate analysis on Gleason & Burton's SNPs?
+
+
 Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
 
 When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
