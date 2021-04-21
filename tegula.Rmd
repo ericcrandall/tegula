@@ -14,6 +14,12 @@ I am going to have a go at re-analyzing RAD data from *Tegula funebralis* in Gle
 ```{r setup}
 library(tidyverse)
 library(readxl)
+library(adegenet)
+library(gdistance)
+library(pegas)
+library(hierfstat)
+library(raster)
+
 ```
 
 ## Download Data
@@ -136,12 +142,103 @@ denovo_map.pl -T 10 --samples ./raw --popmap tegula_popmap.tsv --out-path ./stac
 ```
 
 
+# IBD Analysis
+
+While that cooks, I'm going to see what we can learn from IBD, if anything.
+
+```{r}
+teg.gen <- read.genepop("batch_7.gen")
+tegula_mdata <- read_excel("M0011_PRJNA286949_validated_QC.xlsx", sheet = "Samples")
+#rename populations
+popnames <- c("Slide_Ranch","Pescadero","Pigeon_Point","Aliso_Beach","La_Jolla","Bird_Rock")
+names(popnames) <- unique(teg.gen@pop)
+levels(teg.gen@pop) <- levels(teg.gen@pop) %>% str_replace(".+",replacement=popnames)
+#convert to hierfstat
+teg.hfst <- genind2hierfstat(teg.gen)
+# convert to locus
+teg.loci <- as.loci(teg.gen)
+
+```
+
+## Calculate distance matrices
+
+Weir and Cockerham's Fst and other basic stats
+
+```{r FST, eval=F}
+teg.stats<-basic.stats(teg.hfst)
+theta <- theta.msat(teg.loci)
+#mean theta
+mean(theta[,2])
+teg.fst <- genet.dist(teg.hfst, method = "WC84")
+# mean Fis values
+teg.stats$Fis %>% as_tibble() %>% summarize(across(everything(),mean, na.rm=TRUE))
+#linearize Fst
+teg.fst <- teg.fst/(1-teg.fst)
+```
+
+Calculate geographic distances
+
+```{r geogdists, eval=F}
+tegula_popdata <- unique(tegula_mdata[,c("locality","decimalLongitude","decimalLatitude")])
+tegula_popdata <- tegula_popdata[c(2,1,5,6,4,3),]
+tegula.distances <- as.dist(pointDistance(tegula_popdata[,c(2,3)], lonlat = T)/1000)
+
+#write.csv(as.matrix(teg.fst),"tegula_batch7_linearizedfst.csv", quote=F,row.names = F)
+#write.csv(as.matrix(tegula.distances),"tegula_gcdistances.csv", quote=F,row.names = F)
 
 
+```
 
-Maybe IBD and Migrate analysis on Gleason & Burton's SNPs?
+
+Start here if you don't want to re-do all the above calculations
+
+```{r reload}
+#read in the two distance matrices that were created above
+tegula.distances.mat <- read.csv(file = "tegula_gcdistances.csv", 
+                               row.names = 1)
+#pull out a few other distances we'll need
+neighbordists <- tegula.distances.mat[row(tegula.distances.mat) == col(tegula.distances.mat) + 1]
+distfromSR <- tegula.distances.mat[,1]
+maxdist <- max(tegula.distances.mat)
+
+# convert to distance matrix
+tegula.distances <- as.dist(gobies_b.distances.mat)
+
+tegula.fst <- read.csv(file = "tegula_batch7_linearizedfst.csv", row.names = 1)
+tegula.fst <- as.dist(gobies_b.fst)
 
 
+```
+
+## Calculate linear model
+
+First to get the slope $m$ we need to make a simple linear model. 
+
+```{r IBD}
+# mantel test
+teg_mantel<-mantel.randtest(teg.fst,tegula.distances, nrepet = 10000)
+
+teg_distances <- tibble(distance=as.vector(tegula.distances),fst=as.vector(teg.fst))
+
+teg_lm <- lm(fst ~ distance , teg_distances)
+
+slope <- round(teg_lm$coefficients[2],7)
+mantelr <- round(teg_mantel$obs, 2)
+pvalue <- round(teg_mantel$pvalue, 5)
+
+teg_plot <- ggplot(teg_distances,aes(x=distance,y=fst)) +
+                geom_point() + geom_smooth(method=lm) + xlab("Great Circle Distance (km)") + 
+                ylab(expression(F["ST"]/1-F["ST"])) + 
+                geom_text(label = paste("b =", slope, 
+                                        "; Mantel r =", mantelr,
+                                        ", p =", pvalue ), 
+                          mapping = aes(x = 200, y = 0.015))
+
+teg_plot
+
+ggsave("teg_batch7_IBD.pdf", plot=teg_plot,device="pdf", width=7, height=5,units="in")
+
+```
 Add a new chunk by clicking the *Insert Chunk* button on the toolbar or by pressing *Cmd+Option+I*.
 
 When you save the notebook, an HTML file containing the code and output will be saved alongside it (click the *Preview* button or press *Cmd+Shift+K* to preview the HTML file). 
